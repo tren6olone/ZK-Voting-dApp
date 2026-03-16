@@ -2,7 +2,7 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import LinkedInProvider from "next-auth/providers/linkedin";
 
 const WHITELISTED_EMAILS: string[] = [
-  "bhuvaneshbhanusairyali@gmail.com", "akhilanadikattu@gmail.com"
+  "bhuvaneshbhanusairyali@gmail.com", "akhilanadikattu@gmail.com", "not96923@gmail.com"
 ];
 
 export const authOptions: NextAuthOptions = {

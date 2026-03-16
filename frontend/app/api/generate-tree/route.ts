@@ -53,37 +53,54 @@ export async function POST(req: Request) {
     if (snapshot.empty) {
       return NextResponse.json({ error: "No verified members found to add to the tree." }, { status: 400 });
     }
-
-    // 4. Initialize the Semaphore Group (Merkle Tree)
-    const group = new Group();
-
-    // 5. Sweep all verified identity commitments into the tree
-    const commitmentsAdded: string[] = [];
     
-    snapshot.docs.forEach(doc => {
-      const data = doc.data();
-      if (data.identityCommitment) {
-        group.addMember(data.identityCommitment);
-        commitmentsAdded.push(data.email);
+    // ... fetching the snapshot ...
+    
+      if (snapshot.empty) {
+        return NextResponse.json({ error: "No verified members found to add to the tree." }, { status: 400 });
       }
-    });
 
-    // 6. Output the Master Merkle Root
-    const merkleRoot = group.root.toString();
-
-    // Save the official root state back to Firebase for the frontend to easily read
-    await db.collection("organizations").doc("org_1").set({
-      currentMerkleRoot: merkleRoot,
-      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-      totalMembersInTree: commitmentsAdded.length
-    }, { merge: true });
-
-    return NextResponse.json({ 
-      success: true, 
-      merkleRoot,
-      totalMembers: commitmentsAdded.length,
-      message: "Tree successfully generated via Smart Contract authorization." 
-    });
+      // 3.1 Create a Firebase Batch to update everyone at once
+        const batch = db.batch();
+    
+      // 4. Create arrays to hold the emails and the BigInt commitments
+        const commitmentsAdded: string[] = [];
+        const commitmentsBigInt: bigint[] = [];
+        
+        // 5. Sweep the database and assign the true index based on array position
+        snapshot.docs.forEach((doc, currentIndex) => {
+          const data = doc.data();
+          if (data.identityCommitment) {
+            commitmentsBigInt.push(BigInt(data.identityCommitment));
+            commitmentsAdded.push(data.email);
+            
+            // Add the correct index update to our Firebase batch
+            batch.update(doc.ref, { 
+              treeIndex: currentIndex 
+            });
+          }
+        });
+      
+        // 6. Initialize the Group
+        const group = new Group(commitmentsBigInt);
+        const merkleRoot = group.root.toString();
+      
+        // 7. Save the Master Root
+        batch.set(db.collection("organizations").doc("org_1"), {
+          currentMerkleRoot: merkleRoot,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+          totalMembersInTree: commitmentsAdded.length
+        }, { merge: true });
+      
+        // 8. Commit all the index updates and the new root to the database instantly
+        await batch.commit();
+      
+        return NextResponse.json({ 
+          success: true, 
+          merkleRoot,
+          totalMembers: commitmentsAdded.length,
+          message: "Tree generated and all member indices updated." 
+        });
 
   } catch (error) {
     console.error("Tree generation error:", error);

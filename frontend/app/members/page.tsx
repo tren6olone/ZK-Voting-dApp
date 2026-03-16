@@ -16,7 +16,9 @@ interface Member {
 
 // 2. Your Deployed Smart Contract Details
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const MINIMAL_ABI = ["function isManager(address) view returns (bool)"];
+const MINIMAL_ABI = ["function isManager(address) view returns (bool)",
+                     "function currentMerkleRoot() view returns (uint256)"
+];
 
 export default function MembersRoster() {
   const { address, isConnected } = useAppKitAccount();
@@ -25,6 +27,7 @@ export default function MembersRoster() {
   const [members, setMembers] = useState<Member[]>([]);
   const [isManagerOnChain, setIsManagerOnChain] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [onChainRoot, setOnChainRoot] = useState<string | null>(null);
 
   // Fetch the roster from Firebase
   useEffect(() => {
@@ -35,24 +38,32 @@ export default function MembersRoster() {
 
   // 3. TRUE WEB3 CHECK: Ask the blockchain if the connected wallet is a manager
   useEffect(() => {
-    const checkManagerStatus = async () => {
-      if (isConnected && address && walletProvider) {
-        try {
-          const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
-          const contract = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
-          
-          const status = await contract.isManager(address);
-          setIsManagerOnChain(status);
-        } catch (error) {
-          console.error("Failed to check manager status on-chain:", error);
+      const fetchBlockchainData = async () => {
+        if (isConnected && address && walletProvider) {
+          try {
+            const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+            const contract = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
+            
+            // Check manager status
+            const status = await contract.isManager(address);
+            setIsManagerOnChain(status);
+  
+            // READ THE ON-CHAIN ROOT
+            const root = await contract.currentMerkleRoot();
+            if (root.toString() !== "0") {
+              setOnChainRoot(root.toString());
+            }
+          } catch (error) {
+            console.error("Failed to fetch blockchain data:", error);
+            setIsManagerOnChain(false);
+          }
+        } else {
           setIsManagerOnChain(false);
+          setOnChainRoot(null);
         }
-      } else {
-        setIsManagerOnChain(false);
-      }
-    };
-    checkManagerStatus();
-  }, [isConnected, address, walletProvider]);
+      };
+      fetchBlockchainData();
+    }, [isConnected, address, walletProvider]);
 
   // Handle Individual User Approval
   const handleApprove = async (targetEmail: string) => {
@@ -85,35 +96,50 @@ export default function MembersRoster() {
 
   // 4. Handle Master Merkle Tree Generation
   const handleGenerateTree = async () => {
-    if (!walletProvider || !address) return;
-    setIsGenerating(true);
-
-    try {
-      const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
-      const signer = await ethersProvider.getSigner();
-      
-      const message = "I authorize the generation of the official Merkle Tree for verified members.";
-      const signature = await signer.signMessage(message);
-
-      const response = await fetch('/api/generate-tree', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ managerAddress: address, signature })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        alert(`SUCCESS! Master Merkle Root Generated:\n\n${data.merkleRoot}\n\nTotal Members Included: ${data.totalMembers}`);
-      } else {
-        alert("Error: " + data.error);
+      if (!walletProvider || !address) return;
+      setIsGenerating(true);
+  
+      try {
+        const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+        const signer = await ethersProvider.getSigner();
+        
+        const message = "I authorize the generation of the official Merkle Tree for verified members.";
+        const signature = await signer.signMessage(message);
+  
+        // 1. Get the newly calculated root from your Next.js API
+        const response = await fetch('/api/generate-tree', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ managerAddress: address, signature })
+        });
+  
+        const data = await response.json();
+        
+        if (data.success) {
+          // 2. TRUE WEB3 WRITE: Pop up MetaMask to update the Smart Contract!
+          alert(`Calculated Root: ${data.merkleRoot}\n\nPlease confirm the MetaMask transaction to save this to the blockchain.`);
+          
+          // We need the full ABI for the write function now
+          const WRITE_ABI = ["function updateMerkleRoot(uint256 newRoot) external"];
+          const contract = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
+          
+          // This triggers the MetaMask pop-up!
+          const tx = await contract.updateMerkleRoot(data.merkleRoot);
+          
+          alert("Transaction submitted! Waiting for the blockchain to mine it...");
+          await tx.wait(); // Wait for it to be permanently etched into the local block
+          
+          alert(`SUCCESS! Smart Contract Updated!\nTotal Members Included: ${data.totalMembers}`);
+        } else {
+          alert("Error: " + data.error);
+        }
+      } catch (error) {
+        console.error("Tree generation/transaction failed:", error);
+        alert("Failed to update blockchain. Check console.");
+      } finally {
+        setIsGenerating(false);
       }
-    } catch (error) {
-      console.error("Tree generation failed:", error);
-      alert("Failed to generate tree. Check console.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+    };
 
   const pending = members.filter(m => m.status === 'pending');
   const verified = members.filter(m => m.status === 'verified');
@@ -128,7 +154,16 @@ export default function MembersRoster() {
               Verified On-Chain Manager
             </span>
           )}
+          {/* THE ON-CHAIN ROOT DISPLAY */}
+            {onChainRoot && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Current On-Chain Merkle Root</p>
+                <p className="text-sm font-mono text-indigo-600 break-all">{onChainRoot}</p>
+              </div>
+            )}
         </div>
+        
+        
         
         <div className="flex flex-col items-end gap-3">
           <appkit-button />
