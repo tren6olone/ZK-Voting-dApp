@@ -36,40 +36,38 @@ contract AnonymousVoter {
     }
 
     function castVote(
-        bool support,
-        uint256 proposalId,
-        uint256 nullifierHash,
-        uint256[8] calldata proof,
-        uint256 merkleTreeDepth
-    ) external {
-        require(!nullifierHashes[nullifierHash], "Zero-Knowledge Proof used: You have already voted on this proposal.");
-
-        uint256 currentRoot = treeManager.currentMerkleRoot();
-        require(currentRoot > 0, "Merkle tree is empty");
-
-        uint256 message = support ? 1 : 0;
-        uint256 scope = proposalId;
-        
-        // 1. Unpack the proof points for the Groth16 Verifier
-        uint256[2] memory pA = [proof[0], proof[1]];
-        uint256[2][2] memory pB = [[proof[2], proof[3]], [proof[4], proof[5]]];
-        uint256[2] memory pC = [proof[6], proof[7]];
-
-        // 2. Format the Public Signals exactly as the V4 circuit expects them
-        uint256[4] memory pubSignals = [
-            currentRoot,
-            nullifierHash,
-            _hash(message), 
-            _hash(scope)
-        ];
-
-        // 3. Verify the mathematical proof! 
-        // Signature: verifyProof(pA, pB, pC, pubSignals, merkleTreeDepth)
-        require(verifier.verifyProof(pA, pB, pC, pubSignals, merkleTreeDepth), "Invalid Zero-Knowledge Proof");
-
-        nullifierHashes[nullifierHash] = true;
-        proposalRegistry.recordVote(proposalId, support);
-
-        emit VoteCast(proposalId, support);
-    }
+            bool support,
+            uint256 proposalId,
+            uint256 nullifierHash,
+            uint256[8] calldata proof,
+            uint256 merkleTreeDepth
+        ) external {
+            // The contract doesn't check msg.sender! 
+            // It only checks if the ZK Proof is mathematically tied to the Merkle Root.
+            
+            require(!nullifierHashes[nullifierHash], "Proof already used");
+    
+            uint256 currentRoot = treeManager.currentMerkleRoot();
+            
+            uint256[4] memory pubSignals = [
+                currentRoot,
+                nullifierHash,
+                _hash(support ? 1 : 0), 
+                _hash(proposalId)
+            ];
+    
+            require(
+                verifier.verifyProof(
+                    [proof[0], proof[1]], 
+                    [[proof[2], proof[3]], [proof[4], proof[5]]], 
+                    [proof[6], proof[7]], 
+                    pubSignals, 
+                    merkleTreeDepth
+                ), 
+                "Invalid ZK Proof"
+            );
+    
+            nullifierHashes[nullifierHash] = true;
+            proposalRegistry.recordVote(proposalId, support);
+        }
 }

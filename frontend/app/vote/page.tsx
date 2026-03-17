@@ -9,8 +9,8 @@ import { generateProof } from "@semaphore-protocol/proof";
 
 // 1. PASTE YOUR TWO CONTRACT ADDRESSES HERE
 const ZK_VOTING_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-const ANONYMOUS_VOTER_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"; // The one we just deployed!
+const PROPOSAL_CONTRACT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
+const ANONYMOUS_VOTER_ADDRESS = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"; // The one we just deployed!
 
 // 2. The ABIs
 const ZK_VOTING_ABI = ["function currentMerkleRoot() view returns (uint256)"];
@@ -84,53 +84,39 @@ export default function VotingDashboard() {
       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
       const signer = await ethersProvider.getSigner();
   
-      // STEP 1: Fetch the ACTUAL root currently on the blockchain
-      const zkVotingContract = new Contract(ZK_VOTING_ADDRESS, ZK_VOTING_ABI, ethersProvider);
-      const blockchainRoot = await zkVotingContract.currentMerkleRoot();
-      
-      console.log("Current Blockchain Merkle Root:", blockchainRoot.toString());
-      
-      if (blockchainRoot.toString() === "0") {
-        alert("The blockchain Merkle tree is empty. Please ask the manager to sync the root.");
-        setIsVoting(null);
-        return;
-      }
-  
-      // STEP 2: Recreate Identity
+      // 1. Generate Identity (User signs locally, NO GAS)
       const signature = await signer.signMessage("Link my LinkedIn account to this Web3 wallet.");
       const identity = new Identity(signature);
   
-      // STEP 3: Fetch commitments and build the group
+      // 2. Build Tree & Proof (Calculated in browser, NO GAS)
       const groupRes = await fetch('/api/get-group');
-      const groupData = await groupRes.json();
-      const group = new Group(groupData.commitments.map((c: string) => BigInt(c)));
+      const { commitments } = await groupRes.json();
+      const group = new Group(commitments.map((c: string) => BigInt(c)));
+      
+      const fullProof = await generateProof(identity, group, support ? BigInt(1) : BigInt(0), BigInt(proposalId));
   
-      // CRITICAL CHECK: Does our local group root match the blockchain root?
-      if (group.root.toString() !== blockchainRoot.toString()) {
-        console.warn("Local root mismatch! Local:", group.root.toString(), "Chain:", blockchainRoot.toString());
-        // We proceed, but the proof might fail if the blockchain is behind Firebase
+      alert("Proof Generated! Sending to Relayer for Gasless Submission...");
+  
+      // 3. Send to our Relayer API
+      const response = await fetch('/api/relayer-vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          support,
+          proposalId,
+          nullifierHash: fullProof.nullifier.toString(),
+          proof: fullProof.points,
+          merkleTreeDepth: fullProof.merkleTreeDepth
+        })
+      });
+  
+      const result = await response.json();
+      if (result.success) {
+        alert(`Success! Relayer paid for your vote. TX: ${result.txHash}`);
+        window.location.reload();
+      } else {
+        throw new Error(result.error);
       }
-  
-      alert("Generating ZK Proof...");
-  
-      // STEP 4: Generate Proof
-      const voteMessage = support ? BigInt(1) : BigInt(0);
-      const scope = BigInt(proposalId);
-      const fullProof = await generateProof(identity, group, voteMessage, scope);
-  
-      // STEP 5: Cast Vote on-chain
-      const votingContract = new Contract(ANONYMOUS_VOTER_ADDRESS, VOTE_ABI, signer);
-      const tx = await votingContract.castVote(
-        support,
-        proposalId,
-        fullProof.nullifier,
-        fullProof.points,
-        fullProof.merkleTreeDepth
-      );
-  
-      await tx.wait();
-      alert("Vote Recorded Successfully!");
-      window.location.reload();
   
     } catch (error: unknown) {
   console.error("Voting failed:", error);
