@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 contract ZKVoting {
     // 1. The On-Chain Roster of Managers
     mapping(address => bool) public isManager;
-
+    
     // 2. The Current Official Merkle Root
     uint256 public currentMerkleRoot;
 

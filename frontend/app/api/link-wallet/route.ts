@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     if (!session || !session.user?.email) {
       return NextResponse.json({ error: "Unauthorized. Please log in via LinkedIn first." }, { status: 401 });
     }
-
+    
     const { signature, publicAddress, linkedinUrl, identityCommitment } = await req.json();
 
     if (!linkedinUrl || !linkedinUrl.includes("linkedin.com/in/")) {

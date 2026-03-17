@@ -34,7 +34,7 @@ contract ProposalRegistry {
         require(msg.sender == votingContract, "Unauthorized: Only the ZK Voting contract can update votes");
         _;
     }
-
+    
     // Set the oracle server when deploying
     constructor(address _oracleSigner) {
         oracleSigner = _oracleSigner;
