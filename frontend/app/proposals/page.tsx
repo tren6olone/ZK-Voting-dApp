@@ -5,7 +5,7 @@ import { useAppKitAccount, useAppKitProvider } from '@reown/appkit/react';
 import { BrowserProvider, Eip1193Provider, Contract } from 'ethers';
 
 // 1. PASTE YOUR NEW PROPOSAL REGISTRY ADDRESS HERE
-const PROPOSAL_CONTRACT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
+const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
 // 2. The exact ABI for the write function
 const PROPOSAL_ABI = [

@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     const relayerWallet = new ethers.Wallet(relayerPrivateKey!, provider);
 
     // 2. Connect to the AnonymousVoter Contract
-    const ANONYMOUS_VOTER_ADDRESS = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82";
+    const ANONYMOUS_VOTER_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
     const VOTE_ABI = [
       "function castVote(bool support, uint256 proposalId, uint256 nullifierHash, uint256[8] calldata proof, uint256 merkleTreeDepth) external"
     ];

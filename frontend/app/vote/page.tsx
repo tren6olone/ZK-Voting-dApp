@@ -9,8 +9,8 @@ import { generateProof } from "@semaphore-protocol/proof";
 
 // 1. PASTE YOUR TWO CONTRACT ADDRESSES HERE
 const ZK_VOTING_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const PROPOSAL_CONTRACT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
-const ANONYMOUS_VOTER_ADDRESS = "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82"; // The one we just deployed!
+const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const ANONYMOUS_VOTER_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"; // The one we just deployed!
 
 // 2. The ABIs
 const ZK_VOTING_ABI = ["function currentMerkleRoot() view returns (uint256)"];
@@ -52,7 +52,7 @@ export default function VotingDashboard() {
         const count = await contract.proposalCount();
         const countNumber = Number(count);
         const fetchedProposals: Proposal[] = [];
-
+        
         for (let i = 1; i <= countNumber; i++) {
           const p = await contract.proposals(i);
           fetchedProposals.push({
