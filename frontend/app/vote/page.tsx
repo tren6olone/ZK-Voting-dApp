@@ -7,7 +7,7 @@ import { Identity } from "@semaphore-protocol/identity";
 import { Group } from "@semaphore-protocol/group";
 import { generateProof } from "@semaphore-protocol/proof";
 
-// 1. PASTE YOUR TWO CONTRACT ADDRESSES HERE
+// 1. PASTE YOUR TWO CONTRACT ADDRESSES HERE hello
 const ZK_VOTING_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 const ANONYMOUS_VOTER_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"; // The one we just deployed!
