@@ -3,12 +3,15 @@ pragma solidity ^0.8.24;
 
 import "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
 
+// 1. Interface for the Tree Manager
 interface ITreeManager {
     function currentMerkleRoot() external view returns (uint256);
 }
 
+// 2. Interface for the Proposal Registry
 interface IProposalRegistry {
-    function recordVote(uint256 proposalId, bool support) external;
+    function recordEncryptedVote(uint256 proposalId, bytes calldata encryptedVote) external;
+    function isProposalActive(uint256 proposalId) external view returns (bool);
 }
 
 contract AnonymousVoter {
@@ -16,9 +19,10 @@ contract AnonymousVoter {
     ITreeManager public treeManager;
     IProposalRegistry public proposalRegistry;
 
-    mapping(uint256 => bool) public nullifierHashes;
+    // FIX: Scoped nullifiers per proposal
+    mapping(uint256 => mapping(uint256 => bool)) public nullifierHashes;
 
-    event VoteCast(uint256 indexed proposalId, bool support);
+    event VoteRelayed(uint256 indexed proposalId, uint256 nullifierHash);
 
     constructor(
         address _verifier,
@@ -30,44 +34,66 @@ contract AnonymousVoter {
         proposalRegistry = IProposalRegistry(_proposalRegistry);
     }
 
-    // Semaphore V4 hashes the message and scope to fit into the SNARK scalar field
+    // Semaphore V4 hashing utility
     function _hash(uint256 message) internal pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(message))) >> 8;
     }
 
+    // --- ENCRYPTED VOTING ENGINE ---
+
     function castVote(
-            bool support,
-            uint256 proposalId,
-            uint256 nullifierHash,
-            uint256[8] calldata proof,
-            uint256 merkleTreeDepth
-        ) external {
-            // The contract doesn't check msg.sender! 
-            // It only checks if the ZK Proof is mathematically tied to the Merkle Root.
-            
-            require(!nullifierHashes[nullifierHash], "Proof already used");
-    
-            uint256 currentRoot = treeManager.currentMerkleRoot();
-            
-            uint256[4] memory pubSignals = [
-                currentRoot,
-                nullifierHash,
-                _hash(support ? 1 : 0), 
-                _hash(proposalId)
-            ];
-    
-            require(
-                verifier.verifyProof(
-                    [proof[0], proof[1]], 
-                    [[proof[2], proof[3]], [proof[4], proof[5]]], 
-                    [proof[6], proof[7]], 
-                    pubSignals, 
-                    merkleTreeDepth
-                ), 
-                "Invalid ZK Proof"
-            );
-    
-            nullifierHashes[nullifierHash] = true;
-            proposalRegistry.recordVote(proposalId, support);
-        }
+        uint256 proposalId,
+        uint256 nullifierHash,
+        bytes calldata encryptedVote,
+        uint256[8] calldata proof,
+        uint256 merkleTreeDepth
+    ) external {
+        // 1. Ensure proposal is valid and active
+        require(
+            proposalRegistry.isProposalActive(proposalId),
+            "Invalid or inactive proposal"
+        );
+
+        // 2. Prevent double voting per proposal
+        require(
+            !nullifierHashes[proposalId][nullifierHash],
+            "Proof already used"
+        );
+
+        // 3. Get current Merkle root
+        uint256 currentRoot = treeManager.currentMerkleRoot();
+
+        // 4. Bind encrypted vote to proof
+        uint256 signal = uint256(
+            keccak256(abi.encodePacked(encryptedVote, proposalId))
+        );
+
+        // 5. Construct public signals
+        uint256[4] memory pubSignals = [
+            currentRoot,
+            nullifierHash,
+            _hash(signal),
+            _hash(proposalId)
+        ];
+
+        // 6. Verify ZK proof
+        require(
+            verifier.verifyProof(
+                [proof[0], proof[1]],
+                [[proof[2], proof[3]], [proof[4], proof[5]]],
+                [proof[6], proof[7]],
+                pubSignals,
+                merkleTreeDepth
+            ),
+            "Invalid ZK Proof"
+        );
+
+        // 7. Mark nullifier used
+        nullifierHashes[proposalId][nullifierHash] = true;
+
+        // 8. Forward encrypted vote
+        proposalRegistry.recordEncryptedVote(proposalId, encryptedVote);
+
+        emit VoteRelayed(proposalId, nullifierHash);
+    }
 }
