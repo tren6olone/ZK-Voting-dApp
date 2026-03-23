@@ -16,9 +16,10 @@ const db = admin.firestore();
 
 export async function POST(req: Request) {
   try {
-    const { userEmail, userWallet, title, description } = await req.json();
+    // 1. EXTRACTION: We now pull in the contentHash that the frontend generated
+    const { userEmail, userWallet, title, description, contentHash } = await req.json();
 
-    // 1. Verify the user actually exists in the DAO
+    // 2. Verify the user actually exists in the DAO
     const userDoc = await db.collection("organizations").doc("org_1").collection("members").doc(userEmail).get();
     
     if (!userDoc.exists) {
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
 
     const userData = userDoc.data();
 
-    // 2. Strict Security Checks
+    // 3. Strict Security Checks
     if (userData?.status !== "verified") {
       return NextResponse.json({ error: "User is not a verified member." }, { status: 403 });
     }
@@ -36,22 +37,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Wallet address does not match registered profile." }, { status: 403 });
     }
 
-    // 3. Setup the Server's Wallet (The Oracle)
+    // 4. SAVE TO FIREBASE: Because the blockchain only stores the hash, 
+    // we must save the actual text here so the dashboard can display it later!
+    await db.collection("proposals").doc(contentHash).set({
+      creator: userWallet,
+      title: title,
+      description: description,
+      contentHash: contentHash,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 5. Setup the Server's Wallet (The Oracle)
     const oraclePrivateKey = process.env.ORACLE_PRIVATE_KEY;
     if (!oraclePrivateKey) {
       return NextResponse.json({ error: "Server misconfiguration: Oracle key missing." }, { status: 500 });
     }
     const oracleWallet = new ethers.Wallet(oraclePrivateKey);
 
-    // 4. Generate the exact same hash the Solidity contract expects:
-    // keccak256(abi.encodePacked(userWallet, title, description))
+    // 6. THE CRITICAL MATH FIX: Generate the exact same hash the NEW Solidity contract expects
+    // keccak256(abi.encodePacked(userWallet, contentHash))
     const messageHash = ethers.solidityPackedKeccak256(
-      ["address", "string", "string"],
-      [userWallet, title, description]
+      ["address", "bytes32"],
+      [userWallet, contentHash]
     );
 
-    // 5. Sign the hash to create the Ticket
-    // ethers.getBytes automatically prepares the hash for Ethereum's ECDSA signature
+    // 7. Sign the hash to create the Ticket
     const ticket = await oracleWallet.signMessage(ethers.getBytes(messageHash));
 
     return NextResponse.json({ 

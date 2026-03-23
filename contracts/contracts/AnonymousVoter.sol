@@ -63,17 +63,16 @@ contract AnonymousVoter {
         // 3. Get current Merkle root
         uint256 currentRoot = treeManager.currentMerkleRoot();
 
-        // 4. Bind encrypted vote to proof
-        uint256 signal = uint256(
-            keccak256(abi.encodePacked(encryptedVote, proposalId))
-        );
+        // 4. THE FIX: Bind encrypted vote to proof using a direct, simple hash
+        // This stops the JS vs Solidity byte-padding mismatches.
+        uint256 payloadHash = uint256(keccak256(encryptedVote));
 
         // 5. Construct public signals
         uint256[4] memory pubSignals = [
             currentRoot,
             nullifierHash,
-            _hash(signal),
-            _hash(proposalId)
+            _hash(payloadHash), // 1:1 Tamper-proof binding to the encrypted vote
+            _hash(proposalId)   // 1:1 Scope binding (prevents cross-proposal voting)
         ];
 
         // 6. Verify ZK proof

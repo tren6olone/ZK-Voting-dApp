@@ -1,10 +1,6 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import LinkedInProvider from "next-auth/providers/linkedin";
 
-const WHITELISTED_EMAILS: string[] = [
-  "bhuvaneshbhanusairyali@gmail.com", "akhilanadikattu@gmail.com", "not96923@gmail.com"
-];
-
 export const authOptions: NextAuthOptions = {
   providers: [
     LinkedInProvider({
@@ -30,12 +26,13 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      if (!user.email) return false;
-      const isWhitelisted = WHITELISTED_EMAILS.includes(user.email);
-      if (!isWhitelisted) {
-        console.warn(`Blocked unauthorized login attempt from: ${user.email}`);
-        return false; 
+      // 1. Check if LinkedIn successfully returned an email
+      if (!user.email) {
+        console.warn("Blocked login attempt: No email provided by LinkedIn.");
+        return false;
       }
+      
+      // 2. The gates are open! Allow anyone with a valid LinkedIn account to log in.
       return true; 
     },
     async jwt({ token, user }) {

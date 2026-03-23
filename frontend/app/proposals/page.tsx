@@ -2,23 +2,22 @@
 
 import { useState } from "react";
 import { useAppKitAccount, useAppKitProvider } from '@reown/appkit/react';
-import { BrowserProvider, Eip1193Provider, Contract } from 'ethers';
+// Added keccak256 and toUtf8Bytes for the new hash logic!
+import { BrowserProvider, Eip1193Provider, Contract, keccak256, toUtf8Bytes } from 'ethers';
 
-// 1. PASTE YOUR NEW PROPOSAL REGISTRY ADDRESS HERE
 const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
-// 2. The exact ABI for the write function
+// 1. UPDATED ABI to match the Gasless ProposalRegistry
 const PROPOSAL_ABI = [
-  "function createProposal(string _title, string _description, bytes _serverTicket) external",
-  "event ProposalCreated(uint256 indexed id, address indexed creator, string title)"
+  "function createProposal(bytes32 _contentHash, bytes calldata _serverTicket) external",
+  "event ProposalCreated(uint256 indexed id, address indexed creator, bytes32 contentHash, uint256 endTime)"
 ];
 
 export default function CreateProposal() {
   const { address, isConnected } = useAppKitAccount();
   const { walletProvider } = useAppKitProvider('eip155');
-
-  // Form State
-  const [email, setEmail] = useState(""); // Needed to look up the user in Firebase
+  
+  const [email, setEmail] = useState(""); 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,15 +32,21 @@ export default function CreateProposal() {
     setIsSubmitting(true);
 
     try {
-      // STEP 1: Ask the Next.js API for the Cryptographic Ticket
+      // STEP 1: Generate the Gas-Efficient Content Hash
+      // We hash the title and description together. The blockchain only stores this hash!
+      const rawString = title + "|" + description;
+      const contentHash = keccak256(toUtf8Bytes(rawString));
+
+      // STEP 2: Ask the Next.js API for the Cryptographic Ticket
       const ticketResponse = await fetch('/api/generate-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userEmail: email,
           userWallet: address,
-          title: title,
-          description: description
+          title: title,               // Send text to save in Firebase
+          description: description,   // Send text to save in Firebase
+          contentHash: contentHash    // Send hash to be cryptographically signed
         })
       });
 
@@ -53,37 +58,29 @@ export default function CreateProposal() {
         return;
       }
 
-      const serverTicket = ticketData.ticket;
-      
-      // STEP 2: Pop up MetaMask to pay the gas and submit to the Blockchain
-      alert("Ticket verified by Server! Please confirm the MetaMask transaction to pay the gas fee and create your proposal on-chain.");
+      // STEP 3: Pop up MetaMask to submit the Hash + Ticket to the Blockchain
+      alert("Ticket verified! Please confirm the MetaMask transaction to create your proposal on-chain.");
 
       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
       const signer = await ethersProvider.getSigner();
       const contract = new Contract(PROPOSAL_CONTRACT_ADDRESS, PROPOSAL_ABI, signer);
 
-      // Call the smart contract with the User's Data + The Server's Ticket
-      const tx = await contract.createProposal(title, description, serverTicket);
+      // CALLING THE NEW FUNCTION SIGNATURE
+      const tx = await contract.createProposal(contentHash, ticketData.ticket);
 
       alert("Transaction submitted! Waiting for the blockchain to mine it...");
-      await tx.wait(); // Wait for it to be permanently etched into the local block
+      await tx.wait(); 
 
       alert("SUCCESS! 🚀 Proposal permanently created on the blockchain!");
 
-      // Clear the form
       setTitle("");
       setDescription("");
       setEmail("");
 
     } catch (error: unknown) {
-  console.error("Proposal creation failed:", error);
-
-  if (error instanceof Error) {
-    console.error(error.message);
-  }
-
-  alert("Transaction failed or rejected by contract. Check console for details.");
-} finally {
+      console.error("Proposal creation failed:", error);
+      alert("Transaction failed or rejected by contract. Check console for details.");
+    } finally {
       setIsSubmitting(false);
     }
   };

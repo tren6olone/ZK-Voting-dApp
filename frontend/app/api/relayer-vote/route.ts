@@ -3,34 +3,32 @@ import { ethers } from "ethers";
 
 export async function POST(req: Request) {
   try {
-    // We ONLY take the proof data. NO emails, NO names, NO user wallets.
-    const { support, proposalId, nullifierHash, proof, merkleTreeDepth } = await req.json();
-
-    // 1. Setup the Relayer (Account #1 from Hardhat)
-    const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+    // 1. Extract the NEW payload (Notice 'encryptedVote' instead of 'support')
+    const { proposalId, nullifierHash, encryptedVote, proof, merkleTreeDepth } = await req.json();
     
-    // Use your Hardhat Private Key (stored in .env.local)
+    // 2. Setup the Relayer
+    const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
     const relayerPrivateKey = process.env.ORACLE_PRIVATE_KEY; 
     const relayerWallet = new ethers.Wallet(relayerPrivateKey!, provider);
-
-    // 2. Connect to the AnonymousVoter Contract
+    
+    // 3. Connect to AnonymousVoter using the NEW ABI
     const ANONYMOUS_VOTER_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
     const VOTE_ABI = [
-      "function castVote(bool support, uint256 proposalId, uint256 nullifierHash, uint256[8] calldata proof, uint256 merkleTreeDepth) external"
+      "function castVote(uint256 proposalId, uint256 nullifierHash, bytes calldata encryptedVote, uint256[8] calldata proof, uint256 merkleTreeDepth) external"
     ];
     
     const votingContract = new ethers.Contract(ANONYMOUS_VOTER_ADDRESS, VOTE_ABI, relayerWallet);
 
-    console.log(`Relayer ${relayerWallet.address} is sponsoring vote for Proposal #${proposalId}`);
+    console.log(`Relayer ${relayerWallet.address} is sponsoring encrypted vote for Proposal #${proposalId}`);
 
-    // 3. Submit the proof and pay the gas
+    // 4. Submit the transaction (Order must perfectly match the ABI above!)
     const tx = await votingContract.castVote(
-      support,
       proposalId,
       nullifierHash,
+      encryptedVote,
       proof,
       merkleTreeDepth,
-      { gasLimit: 1000000 } // Ensure enough gas for ZK verification
+      { gasLimit: 2000000 } // Bumped gas limit slightly for the encryption parsing
     );
 
     const receipt = await tx.wait();
@@ -38,16 +36,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ 
       success: true, 
       txHash: receipt.hash,
-      message: "Vote cast anonymously via Relayer!" 
+      message: "Encrypted vote cast anonymously via Relayer!" 
     });
 
   } catch (error: unknown) {
-  console.error("Relayer failed:", error);
-
-  let message = "Internal server error";
-
-  if (error instanceof Error) {
-    message = error.message;
+    console.error("Relayer failed:", error);
+    
+    // FIX: Actually return the error to the frontend so it doesn't hang!
+    let message = "Internal server error";
+    if (error instanceof Error) {
+      message = error.message;
+    }
+    
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
 }

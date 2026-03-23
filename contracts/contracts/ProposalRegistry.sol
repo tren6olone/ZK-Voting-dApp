@@ -120,7 +120,11 @@ contract ProposalRegistry {
 
         Proposal storage p = proposals[proposalId];
 
-        require(block.timestamp > p.endTime, "Voting still active");
+        // 1. Calculate the total votes cast
+        uint256 totalVotesCast = _yesVotes + _noVotes + _abstainVotes;
+
+        // 2. THE FIX: Allow early tally if 100% of eligible voters have cast their votes
+        require(block.timestamp > p.endTime || totalVotesCast >= _totalEligibleVoters, "Voting still active");
         require(!p.isTallied, "Already finalized");
 
         require(p.ballotsHash == _finalBallotsHash, "Ballot hash mismatch");
@@ -130,7 +134,6 @@ contract ProposalRegistry {
         p.noVotes = _noVotes;
         p.abstainVotes = _abstainVotes;
 
-        uint256 totalVotesCast = _yesVotes + _noVotes + _abstainVotes;
         bool quorumMet = false;
 
         if (_totalEligibleVoters > 0) {
