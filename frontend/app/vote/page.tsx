@@ -7,13 +7,14 @@ import { Identity } from "@semaphore-protocol/identity";
 import { Group } from "@semaphore-protocol/group";
 import { generateProof } from "@semaphore-protocol/proof";
 import EthCrypto from "eth-crypto";
+import { motion, useMotionValue, useTransform, animate, Variants } from "framer-motion";
 
 const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
 const READ_ABI = [
   "function proposalCount() view returns (uint256)",
   "function proposals(uint256) view returns (uint256 id, address creator, bytes32 contentHash, uint256 yesVotes, uint256 noVotes, uint256 abstainVotes, uint256 endTime, bool isTallied, bytes32 ballotsHash)",
-  "event EncryptedVoteRecorded(uint256 indexed id, bytes encryptedVote)" // Added to count live votes!
+  "event EncryptedVoteRecorded(uint256 indexed id, bytes encryptedVote)" 
 ];
 
 interface Proposal {
@@ -27,8 +28,39 @@ interface Proposal {
   isTallied: boolean;
   title?: string;
   description?: string;
-  votesCast?: number; // NEW: Tracks how many encrypted votes exist
+  votesCast?: number; 
 }
+
+// --- NEW: Animated Number Counter Component ---
+function AnimatedCounter({ to }: { to: number }) {
+  const count = useMotionValue(0);
+  const rounded = useTransform(count, (latest) => Math.round(latest));
+
+  useEffect(() => {
+    const controls = animate(count, to, { duration: 1.5, ease: "easeOut" });
+    return controls.stop;
+  }, [count, to]);
+
+  return <motion.span>{rounded}</motion.span>;
+}
+
+// --- ANIMATION VARIANTS ---
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.15 }
+  }
+};
+
+const cardVariants: Variants = {
+  hidden: { opacity: 0, y: 30 },
+  show: { 
+    opacity: 1, 
+    y: 0,
+    transition: { type: "spring", stiffness: 70, damping: 15 }
+  }
+};
 
 export default function VotingDashboard() {
   const { address, isConnected } = useAppKitAccount();
@@ -39,7 +71,6 @@ export default function VotingDashboard() {
   const [isVoting, setIsVoting] = useState<number | null>(null);
   const [timeDrift, setTimeDrift] = useState<number>(0);
   
-  // NEW: Track total eligible members in the DAO
   const [totalMembers, setTotalMembers] = useState<number>(1); 
 
   useEffect(() => {
@@ -48,14 +79,12 @@ export default function VotingDashboard() {
       try {
         const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
         
-        // Fetch Time Drift
         const latestBlock = await ethersProvider.getBlock("latest");
         if (latestBlock) {
           const pcTime = Math.floor(Date.now() / 1000);
           setTimeDrift(latestBlock.timestamp - pcTime);
         }
 
-        // NEW: Fetch Total DAO Members from the Merkle Tree
         const groupRes = await fetch('/api/get-group');
         const { commitments } = await groupRes.json();
         setTotalMembers(commitments.length > 0 ? commitments.length : 1);
@@ -69,7 +98,6 @@ export default function VotingDashboard() {
         for (let i = 1; i <= countNumber; i++) {
           const p = await contract.proposals(i);
           
-          // NEW: Count the EncryptedVoteRecorded logs to see how many people voted!
           const filter = contract.filters.EncryptedVoteRecorded(i);
           const logs = await contract.queryFilter(filter);
 
@@ -82,7 +110,7 @@ export default function VotingDashboard() {
             abstainVotes: Number(p.abstainVotes),
             endTime: Number(p.endTime),
             isTallied: p.isTallied,
-            votesCast: logs.length // Store the total participation
+            votesCast: logs.length 
           });
           hashesToFetch.push(p.contentHash);
         }
@@ -222,124 +250,182 @@ export default function VotingDashboard() {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-8 border-b pb-6">
-        <h1 className="text-3xl font-bold">Active Proposals</h1>
-        <appkit-button />
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="p-8 max-w-5xl mx-auto relative z-10"
+    >
+      {/* Ambient Background Glows */}
+      <div className="absolute top-0 right-10 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
+      <div className="absolute bottom-0 left-10 w-[400px] h-[400px] bg-purple-500/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
+
+      {/* Header */}
+      <div className="flex justify-between items-center mb-10 border-b border-white/10 pb-6">
+        <div>
+          <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-neutral-400 tracking-tight">
+            Active Proposals
+          </h1>
+          <p className="text-neutral-400 mt-2 text-sm">
+            Cast your gasless, zero-knowledge votes below.
+          </p>
+        </div>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-10 text-gray-500 font-medium animate-pulse">
-          Querying the blockchain for proposals...
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-4" />
+          <div className="text-neutral-400 font-medium animate-pulse tracking-wide">Syncing Blockchain Data...</div>
         </div>
       ) : proposals.length === 0 ? (
-        <div className="text-center py-10 text-gray-500 bg-gray-50 rounded-lg border">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+          className="text-center py-16 text-neutral-400 bg-neutral-900/30 backdrop-blur-md rounded-2xl border border-white/5"
+        >
           No proposals found on the blockchain.
-        </div>
+        </motion.div>
       ) : (
-        <div className="grid gap-6">
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="grid gap-8"
+        >
           {proposals.map((p) => {
             const isTimeExpired = getAdjustedNow() >= p.endTime;
-            // NEW: Voting closes if time is up OR if 100% of members have voted!
             const is100PercentVoted = p.votesCast === totalMembers;
             const isVotingOpen = (!isTimeExpired && !is100PercentVoted) && !p.isTallied;
 
-            // Calculate progress bar width
             const participationPercent = Math.min(((p.votesCast || 0) / totalMembers) * 100, 100);
 
             return (
-              <div key={p.id} className="bg-neutral-900 p-6 rounded-lg shadow-sm border border-neutral-800 text-white">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="w-2/3">
-                    <h2 className="text-2xl font-bold text-white">
+              <motion.div 
+                variants={cardVariants}
+                key={p.id} 
+                className="bg-neutral-900/60 backdrop-blur-xl p-8 rounded-2xl shadow-[0_0_30px_rgba(0,0,0,0.3)] border border-neutral-800 text-white relative overflow-hidden"
+              >
+                {/* Proposal Top Accent Line */}
+                <div className={`absolute top-0 left-0 w-full h-1 ${isVotingOpen ? 'bg-gradient-to-r from-green-500 to-emerald-400' : p.isTallied ? 'bg-gradient-to-r from-blue-500 to-indigo-500' : 'bg-gradient-to-r from-red-500 to-rose-500'}`} />
+
+                <div className="flex flex-col md:flex-row justify-between items-start mb-6 gap-4">
+                  <div className="w-full md:w-2/3">
+                    <h2 className="text-3xl font-extrabold text-white tracking-tight leading-tight">
                       {p.title ? p.title : `Proposal #${p.id}`}
                     </h2>
-                    <p className="text-sm font-mono text-neutral-400 mt-2">
-                      Proposed by: <span className="text-indigo-400">{p.creator.slice(0, 6)}...{p.creator.slice(-4)}</span>
-                    </p>
-                    <p className="text-xs font-semibold text-neutral-500 mt-1 uppercase tracking-wide">
-                      🕒 {isTimeExpired ? "Voting Closed" : getTimeRemaining(p.endTime)}
-                    </p>
+                    <div className="flex items-center gap-3 mt-3">
+                      <span className="text-xs font-mono bg-neutral-800 text-neutral-300 px-2 py-1 rounded-md border border-neutral-700">
+                        By: <span className="text-indigo-400">{p.creator.slice(0, 6)}...{p.creator.slice(-4)}</span>
+                      </span>
+                      <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1">
+                        <svg className="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        {isTimeExpired ? "Voting Closed" : getTimeRemaining(p.endTime)}
+                      </span>
+                    </div>
                     
-                    {/* NEW: Live Participation Progress Bar */}
-                    <div className="mt-4 mb-2">
-                      <div className="flex justify-between text-xs text-neutral-400 mb-1 font-semibold uppercase tracking-wide">
+                    {/* Animated Progress Bar */}
+                    <div className="mt-6 mb-2 pr-4">
+                      <div className="flex justify-between text-xs text-neutral-400 mb-2 font-bold uppercase tracking-widest">
                         <span>Participation</span>
-                        <span>{p.votesCast} / {totalMembers} Voted</span>
+                        <span className="text-indigo-300">{p.votesCast} / {totalMembers} Voted</span>
                       </div>
-                      <div className="w-full bg-neutral-800 rounded-full h-2.5">
-                        <div className="bg-indigo-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${participationPercent}%` }}></div>
+                      <div className="w-full bg-neutral-950 rounded-full h-3 border border-neutral-800 overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${participationPercent}%` }}
+                          transition={{ duration: 1.5, ease: "easeOut" }}
+                          className={`h-full rounded-full relative ${p.isTallied ? 'bg-indigo-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`}
+                        >
+                          {/* Inner glowing pulse for active voting */}
+                          {!p.isTallied && (
+                            <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/30 rounded-full animate-pulse" />
+                          )}
+                        </motion.div>
                       </div>
                     </div>
-
                   </div>
-                  <span className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${isVotingOpen ? 'bg-green-900 text-green-300 border border-green-700' : p.isTallied ? 'bg-blue-900 text-blue-300 border border-blue-700' : 'bg-red-900 text-red-300 border border-red-700'}`}>
-                    {isVotingOpen ? "Active" : p.isTallied ? "Tallied" : "Closed"}
+
+                  <span className={`px-4 py-1.5 text-xs font-extrabold uppercase tracking-widest rounded-full border shadow-lg ${isVotingOpen ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' : p.isTallied ? 'bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-blue-500/10' : 'bg-red-500/10 text-red-400 border-red-500/30 shadow-red-500/10'}`}>
+                    {isVotingOpen ? "● Active" : p.isTallied ? "Tallied" : "Closed"}
                   </span>
                 </div>
                 
-                <p className="text-neutral-300 mb-6 bg-neutral-950 p-4 rounded-md border border-neutral-800">
+                <div className="text-neutral-300 mb-8 bg-neutral-950/50 p-5 rounded-xl border border-neutral-800 leading-relaxed">
                   {p.description ? p.description : "Loading description from database..."}
-                </p>
+                </div>
                 
-                <div className="flex items-center gap-4 border-t border-neutral-800 pt-6">
-                  <div className="flex-1 flex flex-col gap-3">
+                <div className="border-t border-white/5 pt-8 mt-2">
+                  <div className="flex-1 flex flex-col md:flex-row gap-4">
                     
                     {isVotingOpen ? (
                       <>
-                        <button 
+                        <motion.button 
+                          whileHover={{ scale: isVoting === p.id ? 1 : 1.02 }}
+                          whileTap={{ scale: isVoting === p.id ? 1 : 0.98 }}
                           onClick={() => handleVote(p.id, 'YES')}
                           disabled={isVoting === p.id}
-                          className="w-full bg-green-700 text-white py-3 rounded-md font-bold hover:bg-green-600 disabled:opacity-50 transition shadow-lg"
+                          className="w-full flex-1 bg-green-600/20 text-green-400 border border-green-500/30 py-3.5 rounded-xl font-bold hover:bg-green-600 hover:text-white disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(34,197,94,0.1)]"
                         >
                           {isVoting === p.id ? "Generating Proof..." : "Vote YES (ZK)"}
-                        </button>
-                        <button 
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: isVoting === p.id ? 1 : 1.02 }}
+                          whileTap={{ scale: isVoting === p.id ? 1 : 0.98 }}
                           onClick={() => handleVote(p.id, 'NO')}
                           disabled={isVoting === p.id}
-                          className="w-full bg-red-700 text-white py-3 rounded-md font-bold hover:bg-red-600 disabled:opacity-50 transition shadow-lg"
+                          className="w-full flex-1 bg-red-600/20 text-red-400 border border-red-500/30 py-3.5 rounded-xl font-bold hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(239,68,68,0.1)]"
                         >
                           {isVoting === p.id ? "Generating Proof..." : "Vote NO (ZK)"}
-                        </button>
-                        <button 
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: isVoting === p.id ? 1 : 1.02 }}
+                          whileTap={{ scale: isVoting === p.id ? 1 : 0.98 }}
                           onClick={() => handleVote(p.id, 'ABSTAIN')}
                           disabled={isVoting === p.id}
-                          className="w-full bg-neutral-700 text-white py-3 rounded-md font-bold hover:bg-neutral-600 disabled:opacity-50 transition shadow-lg"
+                          className="w-full flex-1 bg-neutral-600/20 text-neutral-300 border border-neutral-500/30 py-3.5 rounded-xl font-bold hover:bg-neutral-600 hover:text-white disabled:opacity-50 transition-all"
                         >
-                          {isVoting === p.id ? "Generating Proof..." : "Vote ABSTAIN (ZK)"}
-                        </button>
+                          {isVoting === p.id ? "Generating Proof..." : "Vote ABSTAIN"}
+                        </motion.button>
                       </>
                     ) : !p.isTallied ? (
-                      <button 
+                      <motion.button 
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
                         onClick={() => handleFinalize(p.id)}
-                        className="w-full bg-blue-600 text-white py-3 rounded-md font-bold hover:bg-blue-500 transition shadow-lg border border-blue-400"
+                        className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-500 transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] border border-indigo-500/50"
                       >
-                        {is100PercentVoted ? "🎯 100% Voted: Finalize Tally Early" : "🔒 Time Expired: Finalize Tally"}
-                      </button>
+                        {is100PercentVoted ? "🎯 100% Voted: Finalize Tally Early" : "🔒 Time Expired: Finalize Tally (Oracle)"}
+                      </motion.button>
                     ) : (
-                      <div className="flex justify-between w-full bg-neutral-950 p-4 rounded-md border border-neutral-800">
+                      // ANIMATED TALLIED RESULTS
+                      <div className="flex justify-between w-full bg-neutral-950 p-6 rounded-xl border border-neutral-800 shadow-inner">
                         <div className="text-center w-1/3 border-r border-neutral-800">
-                          <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Yes</p>
-                          <p className="text-2xl font-bold text-green-500">{p.yesVotes}</p>
+                          <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">Yes</p>
+                          <p className="text-4xl font-extrabold text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.4)]">
+                            <AnimatedCounter to={p.yesVotes} />
+                          </p>
                         </div>
                         <div className="text-center w-1/3 border-r border-neutral-800">
-                          <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">No</p>
-                          <p className="text-2xl font-bold text-red-500">{p.noVotes}</p>
+                          <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">No</p>
+                          <p className="text-4xl font-extrabold text-red-400 drop-shadow-[0_0_10px_rgba(248,113,113,0.4)]">
+                            <AnimatedCounter to={p.noVotes} />
+                          </p>
                         </div>
                         <div className="text-center w-1/3">
-                          <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Abstain</p>
-                          <p className="text-2xl font-bold text-neutral-400">{p.abstainVotes}</p>
+                          <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">Abstain</p>
+                          <p className="text-4xl font-extrabold text-neutral-300">
+                            <AnimatedCounter to={p.abstainVotes} />
+                          </p>
                         </div>
                       </div>
                     )}
 
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       )}
-    </div>
+    </motion.div>
   );
 }

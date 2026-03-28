@@ -17,7 +17,7 @@ export default function WalletConnectGate() {
       alert("Please enter your LinkedIn Profile URL (e.g., https://linkedin.com/in/username)")
       return
     }
-
+    
     setIsSubmitting(true)
 
     try {
@@ -89,7 +89,7 @@ export default function WalletConnectGate() {
       <div className="flex flex-col items-center gap-4 w-full border-t pt-6 mt-2">
         <label className="text-sm font-semibold text-gray-700">Connect Web3 Wallet</label>
         <appkit-button />
-
+        
         {isConnected && (
           <button 
             onClick={handleLinkWallet}

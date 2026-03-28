@@ -1,31 +1,41 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import './globals.css'
+import Navbar from '../components/Navbar'
+import { AppKitProvider } from '@/context/AppKitProvider' 
 
-// 1. Import the provider you just created. 
-// Since layout.tsx is inside 'app', we use '../' to go up one level to find the 'context' folder.
-import { AppKitProvider } from "../context/AppKitProvider";
-import NextAuthSessionProvider from "../context/SessionProvider"; // Import the new provider
+// ⚠️ NEW: Import the SessionWrapper we just created!
+import SessionWrapper from '../components/SessionWrapper' 
 
-export const metadata: Metadata = {
-  title: "ZK Voting DAO",
-  description: "Gasless Zero-Knowledge Voting System",
-};
+export const metadata = {
+  title: 'ZK-DAO | Gasless Voting',
+  description: 'A decentralized organizational voting system using Ethereum',
+}
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en">
-      <body>
-        {/* Wrap SessionProvider outside of AppKitProvider */}
-        <NextAuthSessionProvider>
+      <body className="bg-neutral-950 text-white antialiased min-h-screen selection:bg-indigo-500 selection:text-white">
+        
+        {/* Turn on the NextAuth (LinkedIn) Engine */}
+        <SessionWrapper> 
+          
+          {/* Turn on the Web3 (MetaMask) Engine */}
           <AppKitProvider>
-            {children}
+            
+            <Navbar />
+            
+            <main className="pt-32 pb-16">
+              {children}
+            </main>
+            
           </AppKitProvider>
-        </NextAuthSessionProvider>
+          
+        </SessionWrapper>
+
       </body>
     </html>
-  );
+  )
 }
