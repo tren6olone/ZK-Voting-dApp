@@ -12,7 +12,7 @@ contract ZKVoting is EIP712 {
     uint256 public totalManagers;
 
     uint256 public currentMerkleRoot;
-
+    
     uint256 public nonce;
 
     // --- TYPEHASHES (with deadline) ---

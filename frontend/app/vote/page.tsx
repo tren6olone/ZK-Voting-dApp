@@ -152,7 +152,7 @@ export default function VotingDashboard() {
       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
       const signer = await ethersProvider.getSigner();
   
-      const signature = await signer.signMessage("Link my LinkedIn account to this Web3 wallet.");
+      const signature = await signer.signMessage("Associating this social account to this Web3 wallet.");
       const identity = new Identity(signature);
   
       const groupRes = await fetch('/api/get-group');

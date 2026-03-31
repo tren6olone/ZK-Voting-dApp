@@ -9,7 +9,7 @@ export default function TestIdentity() {
   const { address, isConnected } = useAppKitAccount();
   const { walletProvider } = useAppKitProvider('eip155');
   
-  const [signMessage, setSignMessage] = useState("Link my LinkedIn account to this Web3 wallet.");
+  const [signMessage, setSignMessage] = useState("Associating this social account to this Web3 wallet.");
   const [commitment, setCommitment] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

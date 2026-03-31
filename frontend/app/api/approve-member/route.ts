@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import * as admin from "firebase-admin";
-import { addMemberToTree } from "../utils/TreeManager"; // Adjusted path to match typical Next.js structure
+import { addMemberToTree } from "../utils/TreeManager"; 
 
 // --- FIREBASE INIT ---
 if (!admin.apps.length) {
@@ -66,23 +66,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "You have already approved this member." }, { status: 400 });
     }
 
+    // --- NEW: ZK IDENTITY SAFETY GATE ---
+    // If the member was manually nominated, they MUST visit the /register page to generate their identity first.
+    if (!userData?.identityCommitment) {
+      return NextResponse.json({ 
+        error: "Missing ZK Identity! This user was manually nominated. They must visit the 'Join DAO' page and connect their wallet to generate their cryptographic identity before you can approve them." 
+      }, { status: 400 });
+    }
+
     currentApprovals.push(managerAddress.toLowerCase());
 
     // 5. THE DYNAMIC MULTI-SIG THRESHOLD CHECK
     if (currentApprovals.length >= requiredApprovals) {
       
       // Add them to the off-chain Merkle Tree (Only happens when EVERY manager has signed)
-      const newRoot = await addMemberToTree(targetEmail, userData!.identityCommitment);
+      // Safely passes the guaranteed identityCommitment
+      const newRoot = await addMemberToTree(targetEmail, userData.identityCommitment);
       
       await userRef.update({
         approvals: currentApprovals,
         status: "verified",
-        treeIndex: userData!.treeIndex || 0 
+        treeIndex: userData.treeIndex || 0 
       });
 
       return NextResponse.json({ 
         success: true, 
-        message: "Unanimous consent reached. Member verified.", 
+        message: "Unanimous consent reached. Member verified and added to Merkle Tree.", 
         approvalsCount: currentApprovals.length,
         requiredCount: requiredApprovals,
         newRoot 

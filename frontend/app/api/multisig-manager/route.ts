@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import * as admin from "firebase-admin";
 
-// --- NEW: Define the strict type to replace 'any' ---
+// Define strict typing for our signatures
 interface SignatureEntry {
   signer: string;
   signature: string;
 }
 
+// --- FIREBASE INIT ---
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -18,40 +19,44 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
-const updatesRef = db.collection("organizations").doc("org_1").collection("root_updates");
+// NEW COLLECTION: Isolating manager votes from Merkle Root votes
+const managerUpdatesRef = db.collection("organizations").doc("org_1").collection("manager_updates");
 
+// --- GET: Fetch the current queue for the UI ---
 export async function GET() {
   try {
-    const snapshot = await updatesRef.get();
+    const snapshot = await managerUpdatesRef.get();
     const updates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     return NextResponse.json({ updates });
   } catch (error) {
-    // FIXED: Actually use the error variable by logging it
-    console.error("Failed to fetch root updates:", error); 
+    console.error("Failed to fetch manager updates:", error);
     return NextResponse.json({ error: "Failed to fetch." }, { status: 500 });
   }
 }
 
+// --- POST: Add a new signature to a specific manager action ---
 export async function POST(req: Request) {
   try {
-    const { root, nonce, deadline, signature, signerAddress, totalManagersRequired } = await req.json();
+    const { action, targetAddress, nonce, deadline, signature, signerAddress, totalManagersRequired } = await req.json();
 
-    const docRef = updatesRef.doc(root);
+    // Use the target wallet address as the unique document ID
+    const docRef = managerUpdatesRef.doc(targetAddress.toLowerCase());
     const docSnap = await docRef.get();
 
-    // FIXED: Replaced 'any[]' with our strict 'SignatureEntry[]'
     let signatures: SignatureEntry[] = [];
     if (docSnap.exists) {
       signatures = docSnap.data()?.signatures || [];
     }
 
-    // FIXED: Replaced '(s: any)' with '(s: SignatureEntry)'
+    // Prevent duplicate signatures from the same wallet
     if (!signatures.some((s: SignatureEntry) => s.signer.toLowerCase() === signerAddress.toLowerCase())) {
       signatures.push({ signer: signerAddress.toLowerCase(), signature });
     }
 
+    // Save the updated queue item
     await docRef.set({
-      root,
+      action,
+      targetAddress: targetAddress.toLowerCase(),
       nonce,
       deadline,
       signatures,
@@ -64,20 +69,19 @@ export async function POST(req: Request) {
       signatures
     });
   } catch (error) {
-    // FIXED: Actually use the error variable by logging it
-    console.error("Failed to save root update:", error);
+    console.error("Failed to save manager update:", error);
     return NextResponse.json({ error: "Failed to save." }, { status: 500 });
   }
 }
 
+// --- DELETE: Clean up the queue after execution or invalidation ---
 export async function DELETE(req: Request) {
   try {
-    const { root } = await req.json();
-    await updatesRef.doc(root).delete();
+    const { targetAddress } = await req.json();
+    await managerUpdatesRef.doc(targetAddress.toLowerCase()).delete();
     return NextResponse.json({ success: true });
   } catch (error) {
-    // FIXED: Actually use the error variable by logging it
-    console.error("Failed to delete root update:", error);
+    console.error("Failed to delete manager update:", error);
     return NextResponse.json({ error: "Failed to delete." }, { status: 500 });
   }
 }

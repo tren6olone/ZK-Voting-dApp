@@ -27,7 +27,7 @@ export default function WalletConnectGate() {
       // FIX #3 — get the true wallet address directly from the signer
       const trueWalletAddress = await signer.getAddress()
 
-      const message = "Link my LinkedIn account to this Web3 wallet."
+      const message = "Associating this social account to this Web3 wallet."
       const signature = await signer.signMessage(message)
 
       // FIX #7 — dynamically import Identity to avoid Next.js crypto bundling issues
