@@ -45,22 +45,34 @@ export default function MembersRoster() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pendingRootTxs, setPendingRootTxs] = useState<any[]>([]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pendingManagerTxs, setPendingManagerTxs] = useState<any[]>([]);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [newMember, setNewMember] = useState({ email: '', name: '', linkedinUrl: '', walletAddress: '', isManager: false });
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
   useEffect(() => {
-    fetch('/api/members')
-      .then(res => res.json())
-      .then(data => setMembers(data.members || []));
-
-    // Fetch the array of queued root updates
-    fetch('/api/multisig-root')
-      .then(res => res.json())
-      .then(data => {
-        if (data.updates) setPendingRootTxs(data.updates);
-      });
-  }, []);
+      // 1. Fetch Verified Members
+      // Added { cache: 'no-store' } to completely bypass Next.js aggressive caching
+      fetch('/api/members', { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => setMembers(data.members || []));
+  
+      // 2. Fetch the array of queued Merkle Root updates
+      fetch('/api/multisig-root', { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.updates) setPendingRootTxs(data.updates);
+        });
+  
+      // 3. FIXED: Actually fetch the Manager Queue! (You were missing this)
+      fetch('/api/multisig-manager', { cache: 'no-store' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.updates) setPendingManagerTxs(data.updates);
+        });
+    }, []);
 
   useEffect(() => {
       const fetchBlockchainData = async () => {
@@ -138,161 +150,190 @@ export default function MembersRoster() {
       console.error("Approval failed:", error);
     }
   };
-
-  const handleNominate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!walletProvider || !address) return;
-    setIsSubmittingAction(true);
-
-    try {
-      const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
-      const signer = await ethersProvider.getSigner();
-      const network = await ethersProvider.getNetwork();
-      const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
-
-      if (newMember.isManager) {
-        const currentNonce = await contractRead.nonce();
-        const deadline = Math.floor(Date.now() / 1000) + 3600; 
-        const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
-        const types = { AddManager: [ { name: "newManager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
-        const value = { newManager: newMember.walletAddress, nonce: currentNonce, deadline: deadline };
-
-        alert("Please sign the EIP-712 AddManager Authorization in MetaMask...");
-        const eip712Signature = await signer.signTypedData(domain, types, value);
-
-        const WRITE_ABI = ["function addManager(address newManager, uint256 deadline, bytes[] calldata signatures) external"];
-        const contractWrite = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
-        
-        alert("Confirm the gas transaction to add the manager to the blockchain.");
-        const tx = await contractWrite.addManager(newMember.walletAddress, deadline, [eip712Signature]);
-        await tx.wait(); 
-
-        alert("SUCCESS! Manager permanently added to the blockchain.");
-        window.location.reload();
-      } else {
-        const message = `I nominate ${newMember.email} as a new MEMBER in the organization.`;
-        const signature = await signer.signMessage(message);
-
-        const response = await fetch('/api/nominate-member', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...newMember, targetId: newMember.email, signature, managerAddress: address })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-          alert("Member Nomination submitted successfully!");
-          window.location.reload();
-        } else {
-          alert("Error: " + data.error);
-        }
-      }
-    } catch (error: unknown) {
-      console.error("Nomination/Blockchain failed:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes("Already manager")) {
-        alert("The blockchain says this wallet is ALREADY a manager! Refreshing data.");
-        window.location.reload();
-      } else {
-        alert("Failed to submit. Check console for details.");
-      }
-    } finally {
-      setIsSubmittingAction(false);
-    }
-  };
   
-  // --- 1. VOTE TO REMOVE A MANAGER ---
-   const handleVoteRemoveManager = async (targetWallet: string) => {
+  const handleNominate = async (e: React.FormEvent) => {
+     e.preventDefault();
      if (!walletProvider || !address) return;
-     if (!confirm(`Vote to REVOKE manager privileges for ${targetWallet.slice(0,6)}...?`)) return;
-     
      setIsSubmittingAction(true);
+     
      try {
        const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
        const signer = await ethersProvider.getSigner();
        const network = await ethersProvider.getNetwork();
        const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
+  
+       if (newMember.isManager) {
+          const currentNonce = await contractRead.nonce();
+          const deadline = Math.floor(Date.now() / 1000) + 3600; 
+          const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
+          const types = { AddManager: [ { name: "newManager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
+          const value = { newManager: newMember.walletAddress, nonce: currentNonce, deadline: deadline };
        
-       const currentNonce = await contractRead.nonce();
-       const deadline = Math.floor(Date.now() / 1000) + 3600; 
+          alert("Please sign the EIP-712 AddManager Authorization in MetaMask...");
+          const eip712Signature = await signer.signTypedData(domain, types, value);
+          
+          // Push this new manager addition into the Manager Queue!
+          await fetch('/api/multisig-manager', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               action: 'add',
+               targetAddress: newMember.walletAddress,
+               nonce: Number(currentNonce),
+               deadline: deadline,
+               signature: eip712Signature,
+               signerAddress: address,
+               totalManagersRequired: totalManagersCount
+            })
+          });
+          
+          alert("New Manager addition added to the Queue! Waiting for other managers to sign.");
+          window.location.reload();
+        } else {
+         const message = `I nominate ${newMember.email} as a new MEMBER in the organization.`;
+         const signature = await signer.signMessage(message);
   
-       const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
-       const types = { RemoveManager: [ { name: "manager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
-       const value = { manager: targetWallet, nonce: Number(currentNonce), deadline };
+         const response = await fetch('/api/nominate-member', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ ...newMember, targetId: newMember.email, signature, managerAddress: address })
+         });
   
-       alert("Please sign the EIP-712 RemoveManager vote in MetaMask...");
-       const eip712Signature = await signer.signTypedData(domain, types, value);
-  
-       await fetch('/api/multisig-manager', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-            action: 'remove',
-            targetAddress: targetWallet,
-            nonce: Number(currentNonce),
-            deadline,
-            signature: eip712Signature,
-            signerAddress: address,
-            totalManagersRequired: totalManagersCount
-         })
-       });
-  
-       alert("Vote added to the Queue! Waiting for other managers.");
-       window.location.reload();
-     } catch (error) {
-       console.error("Vote failed:", error);
+         const data = await response.json();
+         if (data.success) {
+           alert("Member Nomination submitted successfully!");
+           window.location.reload();
+         } else {
+           alert("Error: " + data.error);
+         }
+       }
+     } catch (error: unknown) {
+       console.error("Nomination/Blockchain failed:", error);
+       const errorMessage = error instanceof Error ? error.message : String(error);
+       if (errorMessage.includes("Already manager")) {
+         alert("The blockchain says this wallet is ALREADY a manager! Refreshing data.");
+         window.location.reload();
+       } else {
+         alert("Failed to submit. Check console for details.");
+       }
      } finally {
        setIsSubmittingAction(false);
      }
    };
   
+  // --- 1. VOTE TO REMOVE A MANAGER ---
+   const handleVoteRemoveManager = async (targetWallet: string) => {
+       if (!walletProvider || !address) return;
+       if (!confirm(`Vote to REVOKE manager privileges for ${targetWallet.slice(0,6)}...?`)) return;
+       
+       setIsSubmittingAction(true);
+       try {
+         const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+         const signer = await ethersProvider.getSigner();
+         const network = await ethersProvider.getNetwork();
+         const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
+         
+         const currentNonce = await contractRead.nonce();
+         const deadline = Math.floor(Date.now() / 1000) + 3600; 
+    
+         const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
+         const types = { RemoveManager: [ { name: "manager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
+         const value = { manager: targetWallet, nonce: Number(currentNonce), deadline };
+    
+         alert("Please sign the EIP-712 RemoveManager vote in MetaMask...");
+         const eip712Signature = await signer.signTypedData(domain, types, value);
+    
+         const res = await fetch('/api/multisig-manager', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+              action: 'remove',
+              targetAddress: targetWallet,
+              nonce: Number(currentNonce),
+              deadline,
+              signature: eip712Signature,
+              signerAddress: address,
+              totalManagersRequired: totalManagersCount
+           })
+         });
+         
+         if (!res.ok) {
+             const errorText = await res.text();
+             throw new Error(`Server returned ${res.status}: ${errorText}`);
+         }
+    
+         const data = await res.json();
+         if (!data.success) throw new Error(data.error || "API returned false");
+    
+         alert("Vote successfully added to the Database Queue! Waiting for other managers.");
+         window.location.reload();
+         
+       } catch (error: unknown) { 
+         console.error("Vote failed:", error);
+         const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+         alert(`Failed to save vote to database: ${errorMessage}`);
+       } finally {
+         setIsSubmittingAction(false);
+       }
+     };
+  
    // --- 2. EXECUTE THE REMOVAL ON-CHAIN ---
    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   const handleExecuteManagerTx = async (txData: any) => {
-     if (!walletProvider || !address) return;
-     try {
-       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
-       const signer = await ethersProvider.getSigner();
-       const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
-  
-       const currentNonce = await contractRead.nonce();
-       if (Number(currentNonce) !== Number(txData.nonce)) {
-           alert("Nonce mismatch! The blockchain state changed. Deleting invalid queue item.");
-           await fetch('/api/multisig-manager', { method: 'DELETE', body: JSON.stringify({ targetAddress: txData.targetAddress }) });
-           window.location.reload();
-           return;
-       }
-  
-       const uniqueSignaturesMap = new Map();
-       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-       txData.signatures.forEach((s: any) => uniqueSignaturesMap.set(s.signature, s.signer.toLowerCase()));
-  
-       if (uniqueSignaturesMap.size < totalManagersCount) return alert("Duplicate signatures detected.");
-  
-       const sortedSigners = Array.from(uniqueSignaturesMap.values()).sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
-       const sortedSignatures = sortedSigners.map(signer => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const match = txData.signatures.find((s: any) => s.signer.toLowerCase() === signer);
-          return match?.signature || ""; 
-       });
-  
-       const WRITE_ABI = ["function removeManager(address manager, uint256 deadline, bytes[] calldata signatures) external"];
-       const contractWrite = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
-  
-       alert("Confirm gas transaction to finalize the manager's removal.");
-       const tx = await contractWrite.removeManager(txData.targetAddress, BigInt(txData.deadline), sortedSignatures);
-       await tx.wait();
-  
-       await fetch('/api/multisig-manager', { method: 'DELETE', body: JSON.stringify({ targetAddress: txData.targetAddress }) });
-  
-       alert("SUCCESS! Manager removed and reverted to Verified Member.");
-       window.location.reload();
-     } catch (error: unknown) {
-       console.error("Execution failed:", error);
-       alert("Failed to execute transaction.");
-     }
-   };
-
+    const handleExecuteManagerTx = async (txData: any) => {
+      if (!walletProvider || !address) return;
+      try {
+        const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+        const signer = await ethersProvider.getSigner();
+        const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
+   
+        const currentNonce = await contractRead.nonce();
+        if (Number(currentNonce) !== Number(txData.nonce)) {
+            alert("Nonce mismatch! The blockchain state changed. Deleting invalid queue item.");
+            await fetch('/api/multisig-manager', { method: 'DELETE', body: JSON.stringify({ targetAddress: txData.targetAddress }) });
+            window.location.reload();
+            return;
+        }
+   
+        const uniqueSignaturesMap = new Map();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        txData.signatures.forEach((s: any) => uniqueSignaturesMap.set(s.signature, s.signer.toLowerCase()));
+   
+        if (uniqueSignaturesMap.size < totalManagersCount) return alert("Duplicate signatures detected.");
+   
+        const sortedSigners = Array.from(uniqueSignaturesMap.values()).sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+        const sortedSignatures = sortedSigners.map(signer => {
+           // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           const match = txData.signatures.find((s: any) => s.signer.toLowerCase() === signer);
+           return match?.signature || ""; 
+        });
+   
+        // --- DYNAMIC EXECUTION: PROMOTIONS VS REMOVALS ---
+        if (txData.action === 'add') {
+          const WRITE_ABI = ["function addManager(address newManager, uint256 deadline, bytes[] calldata signatures) external"];
+          const contractWrite = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
+          
+          alert("Confirm gas transaction to finalize the manager's PROMOTION.");
+          const tx = await contractWrite.addManager(txData.targetAddress, BigInt(txData.deadline), sortedSignatures);
+          await tx.wait();
+        } else {
+          const WRITE_ABI = ["function removeManager(address manager, uint256 deadline, bytes[] calldata signatures) external"];
+          const contractWrite = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
+          
+          alert("Confirm gas transaction to finalize the manager's REMOVAL.");
+          const tx = await contractWrite.removeManager(txData.targetAddress, BigInt(txData.deadline), sortedSignatures);
+          await tx.wait();
+        }
+   
+        // Cleanup queue item after success
+        await fetch('/api/multisig-manager', { method: 'DELETE', body: JSON.stringify({ targetAddress: txData.targetAddress }) });
+   
+        alert("SUCCESS! Manager queue item executed on the blockchain.");
+        window.location.reload();
+      } catch (error: unknown) {
+        console.error("Execution failed:", error);
+        alert("Failed to execute transaction.");
+      }
+    };
   const handleVoteRevokeMember = async (m: Member) => {
     if (!walletProvider || !address) return;
     if (!confirm(`Are you sure you want to vote to remove ${m.name}? This requires ${totalManagersCount} manager signatures before updating the Merkle Tree.`)) return;
@@ -331,39 +372,47 @@ export default function MembersRoster() {
   };
 
   const handlePromoteToManager = async (targetWallet: string) => {
-    if (!walletProvider || !address) return;
-    setIsSubmittingAction(true);
-    
-    try {
-      const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
-      const signer = await ethersProvider.getSigner();
-      const network = await ethersProvider.getNetwork();
-      const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
-
-      const currentNonce = await contractRead.nonce();
-      const deadline = Math.floor(Date.now() / 1000) + 3600; 
-      const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
-      const types = { AddManager: [ { name: "newManager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
-      const value = { newManager: targetWallet, nonce: currentNonce, deadline: deadline };
-
-      alert("Please sign the EIP-712 AddManager Authorization in MetaMask...");
-      const eip712Signature = await signer.signTypedData(domain, types, value);
-
-      const WRITE_ABI = ["function addManager(address newManager, uint256 deadline, bytes[] calldata signatures) external"];
-      const contractWrite = new Contract(CONTRACT_ADDRESS, WRITE_ABI, signer);
-      
-      const tx = await contractWrite.addManager(targetWallet, deadline, [eip712Signature]);
-      await tx.wait(); 
-
-      alert("SUCCESS! Member has been promoted to Manager on the blockchain.");
-      window.location.reload();
-    } catch (error) {
-      console.error("Promotion failed:", error);
-      alert("Transaction failed. Check console.");
-    } finally {
-      setIsSubmittingAction(false);
-    }
-  };
+     if (!walletProvider || !address) return;
+     setIsSubmittingAction(true);
+     
+     try {
+       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+       const signer = await ethersProvider.getSigner();
+       const network = await ethersProvider.getNetwork();
+       const contractRead = new Contract(CONTRACT_ADDRESS, MINIMAL_ABI, ethersProvider);
+  
+       const currentNonce = await contractRead.nonce();
+       const deadline = Math.floor(Date.now() / 1000) + 3600; 
+       const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
+       const types = { AddManager: [ { name: "newManager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
+       const value = { newManager: targetWallet, nonce: Number(currentNonce), deadline };
+  
+       alert("Please sign the EIP-712 AddManager Authorization in MetaMask...");
+       const eip712Signature = await signer.signTypedData(domain, types, value);
+  
+       // ADD TO QUEUE INSTEAD OF EXECUTING
+       await fetch('/api/multisig-manager', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+            action: 'add',
+            targetAddress: targetWallet,
+            nonce: Number(currentNonce),
+            deadline,
+            signature: eip712Signature,
+            signerAddress: address,
+            totalManagersRequired: totalManagersCount
+         })
+       });
+  
+       alert("Promotion vote added to the Queue! Waiting for other managers.");
+       window.location.reload();
+     } catch (error) {
+       console.error("Promotion failed:", error);
+     } finally {
+       setIsSubmittingAction(false);
+     }
+   };
 
   // --- NEW: QUEUE GENERATION ---
   const handleGenerateTree = async () => {
@@ -474,6 +523,54 @@ export default function MembersRoster() {
     }
   };
 
+  // --- SIGN AN EXISTING MANAGER TX FROM THE QUEUE ---
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   const handleSignManagerTx = async (txData: any) => {
+     if (!walletProvider || !address) return;
+     try {
+       const ethersProvider = new BrowserProvider(walletProvider as unknown as Eip1193Provider);
+       const signer = await ethersProvider.getSigner();
+       const network = await ethersProvider.getNetwork();
+  
+       const domain = { name: "ZKVoting", version: "1", chainId: network.chainId, verifyingContract: CONTRACT_ADDRESS };
+       
+       // We must strictly match the data types based on whether it's an Add or Remove action
+       let types, value, typeName;
+       if (txData.action === 'add') {
+           types = { AddManager: [ { name: "newManager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
+           value = { newManager: txData.targetAddress, nonce: Number(txData.nonce), deadline: txData.deadline };
+           typeName = "AddManager";
+       } else {
+           types = { RemoveManager: [ { name: "manager", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" } ] };
+           value = { manager: txData.targetAddress, nonce: Number(txData.nonce), deadline: txData.deadline };
+           typeName = "RemoveManager";
+       }
+  
+       alert(`Please sign the EIP-712 ${typeName} vote in MetaMask to add your consensus.`);
+       const eip712Signature = await signer.signTypedData(domain, types, value);
+  
+       // Save the signature while strictly preserving the ORIGINAL nonce and deadline
+       await fetch('/api/multisig-manager', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+            action: txData.action,
+            targetAddress: txData.targetAddress,
+            nonce: txData.nonce,
+            deadline: txData.deadline,
+            signature: eip712Signature,
+            signerAddress: address,
+            totalManagersRequired: totalManagersCount
+         })
+       });
+  
+       alert("Signature successfully added to the queue!");
+       window.location.reload();
+     } catch (error) {
+       console.error("Failed to sign manager queue:", error);
+     }
+   };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
    const handleExecuteRoot = async (txData: any) => {
      if (!walletProvider || !address) return;
@@ -548,6 +645,8 @@ export default function MembersRoster() {
        alert(`Error executing transaction: ${msg}`);
      }
    };
+
+   
 
   // --- STRICT DATA FILTERING ---
   const pending = members.filter(m => m.status === 'pending' && !onChainManagers.includes(m.walletAddress.toLowerCase()));
@@ -636,46 +735,72 @@ export default function MembersRoster() {
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-500/10 rounded-full blur-[100px] -z-10 pointer-events-none" />
 
       {/* --- NEW TRANSACTION QUEUE DASHBOARD --- */}
-      {pendingRootTxs.length > 0 && isManagerOnChain && (
+      {(pendingRootTxs.length > 0 || pendingManagerTxs.length > 0) && isManagerOnChain && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-10 bg-amber-500/10 border border-amber-500/30 rounded-xl p-6 shadow-[0_0_30px_rgba(245,158,11,0.15)] relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
-          <h2 className="text-xl font-bold text-amber-400 mb-4">Transaction Queue ({pendingRootTxs.length})</h2>
+          <h2 className="text-xl font-bold text-amber-400 mb-4">Transaction Queue ({pendingRootTxs.length + pendingManagerTxs.length})</h2>
           
           <div className="space-y-4">
-            {pendingRootTxs.map((tx, index) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const hasSigned = tx.signatures.some((s: any) => s.signer.toLowerCase() === address?.toLowerCase());
-              const isReady = tx.signatures.length >= totalManagersCount;
-
-              return (
-                <div key={tx.root} className="bg-black/40 border border-amber-500/20 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
-                  <div>
-                    <div className="text-sm font-bold text-white mb-1">Update #{index + 1}</div>
-                    <div className="text-xs font-mono text-amber-200/50">Root: {tx.root.slice(0, 15)}...</div>
-                    <div className="text-xs font-mono text-amber-200/50">Signatures: {tx.signatures.length} / {totalManagersCount}</div>
+              {/* 1. MERKLE ROOT ACTION QUEUE */}
+              {pendingRootTxs.map((tx, index) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const hasSigned = tx.signatures.some((s: any) => s.signer.toLowerCase() === address?.toLowerCase());
+                const isReady = tx.signatures.length >= totalManagersCount;
+          
+                return (
+                  <div key={tx.root} className="bg-black/40 border border-amber-500/20 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-white mb-1">Update #{index + 1}</div>
+                      <div className="text-xs font-mono text-amber-200/50">Root: {tx.root.slice(0, 15)}...</div>
+                      <div className="text-xs font-mono text-amber-200/50">Signatures: {tx.signatures.length} / {totalManagersCount}</div>
+                    </div>
+                    <div>
+                      {isReady ? (
+                        <button onClick={() => handleExecuteRoot(tx)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-lg animate-pulse">
+                          Pay Gas & Execute
+                        </button>
+                      ) : hasSigned ? (
+                        <span className="text-amber-400 font-bold text-xs bg-amber-400/10 px-4 py-2.5 rounded-lg border border-amber-400/20">Waiting on others...</span>
+                      ) : (
+                        <button onClick={() => handleSignQueuedRoot(tx)} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-lg">Sign this Update</button>
+                      )}
+                    </div>
                   </div>
-                  
-                  
-                  
-                  <div>
-                    {isReady ? (
-                      <button onClick={() => handleExecuteRoot(tx)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-lg animate-pulse">
-                        Pay Gas & Execute
-                      </button>
-                    ) : hasSigned ? (
-                      <span className="text-amber-400 font-bold text-xs bg-amber-400/10 px-4 py-2.5 rounded-lg border border-amber-400/20">
-                        Waiting on others...
-                      </span>
-                    ) : (
-                      <button onClick={() => handleSignQueuedRoot(tx)} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-lg">
-                        Sign this Update
-                      </button>
-                    )}
+                );
+              })}
+          
+              {/* 2. MANAGER ACTION QUEUE */}
+              {pendingManagerTxs.map((tx) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const hasSigned = tx.signatures.some((s: any) => s.signer.toLowerCase() === address?.toLowerCase());
+                const isReady = tx.signatures.length >= totalManagersCount;
+            
+                return (
+                  <div key={tx.targetAddress} className="bg-black/40 border border-red-500/30 p-4 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-red-400 mb-1 flex items-center gap-2">
+                        <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[10px] uppercase">Manager Removal</span>
+                      </div>
+                      <div className="text-xs font-mono text-white/70">Target: {tx.targetAddress.slice(0, 15)}...</div>
+                      <div className="text-xs font-mono text-white/50 mt-1">Signatures: {tx.signatures.length} / {totalManagersCount}</div>
+                    </div>
+                    <div>
+                      {isReady ? (
+                        <button onClick={() => handleExecuteManagerTx(tx)} className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse">
+                          Pay Gas & Execute Removal
+                        </button>
+                      ) : hasSigned ? (
+                        <span className="text-red-400 font-bold text-xs bg-red-400/10 px-4 py-2.5 rounded-lg border border-red-400/20">Waiting on others...</span>
+                      ) : (
+                        <button onClick={() => handleSignManagerTx(tx)} className="bg-red-600/80 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-lg">
+                          Sign this Removal
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                );
+              })}
+            </div>
         </motion.div>
       )}
 
@@ -775,16 +900,29 @@ export default function MembersRoster() {
                     <td className="px-6 py-4"><span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-indigo-500/20 text-indigo-300">Manager</span></td>
                     <td className="px-6 py-4 text-xs font-mono text-neutral-500">{formatApprovers(m.approvals)}</td>
                     {isManagerOnChain && (
-                       <td className="px-6 py-4 text-right">
-                          <button 
-                            onClick={() => handleRemoveManager(m.walletAddress)} 
-                            className="text-red-400 hover:text-red-300 text-xs font-bold bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition-colors"
-                          >
-                            {/* Intelligently label the button if they are removing themselves */}
-                            {address && m.walletAddress.toLowerCase() === address.toLowerCase() ? "Revoke (Self)" : "Revoke"}
-                          </button>
-                       </td>
-                     )}
+                        <td className="px-6 py-4 text-right">
+                          {(() => {
+                            const pendingTx = pendingManagerTxs.find(tx => tx.targetAddress.toLowerCase() === m.walletAddress.toLowerCase() && tx.action === 'remove');
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const hasVoted = pendingTx?.signatures.some((s: any) => s.signer.toLowerCase() === address?.toLowerCase());
+                            const isSelf = address && m.walletAddress.toLowerCase() === address.toLowerCase();
+                    
+                            if (hasVoted) {
+                              return <span className="text-amber-400 font-bold text-xs bg-amber-400/10 px-3 py-1.5 rounded-lg border border-amber-400/20">Voted ({pendingTx.signatures.length}/{totalManagersCount})</span>;
+                            }
+                    
+                            return (
+                                <button 
+                                  // NEW: If a queue item exists, use the Sign function. Otherwise, create a new vote!
+                                  onClick={() => pendingTx ? handleSignManagerTx(pendingTx) : handleVoteRemoveManager(m.walletAddress)} 
+                                  className="text-red-400 hover:text-red-300 text-xs font-bold bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg border border-red-500/20 transition-colors"
+                                >
+                                  {isSelf ? "Vote to Revoke (Self)" : pendingTx ? `Sign Removal (${pendingTx.signatures.length}/${totalManagersCount})` : "Vote to Revoke"}
+                                </button>
+                              );
+                          })()}
+                        </td>
+                      )}
                   </tr>
                 ))}
               </tbody>

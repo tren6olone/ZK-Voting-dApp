@@ -16,22 +16,30 @@ const db = admin.firestore();
 
 export async function POST(req: Request) {
   try {
-    // 1. EXTRACTION: We now pull in the contentHash that the frontend generated
-    const { userEmail, userWallet, title, description, contentHash } = await req.json();
-
-    // 2. Verify the user actually exists in the DAO
-    const userDoc = await db.collection("organizations").doc("org_1").collection("members").doc(userEmail).get();
+    const { userWallet, title, description, contentHash } = await req.json();
     
-    if (!userDoc.exists) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    // 1. Fetch all members
+    const membersRef = db.collection("organizations").doc("org_1").collection("members");
+    const snapshot = await membersRef.get();
+    
+    // 2. FOOLPROOF FIX: Perform a strict case-insensitive match in memory
+    const matchedDoc = snapshot.docs.find(doc => {
+        const dbWallet = doc.data().walletAddress || "";
+        return dbWallet.toLowerCase() === userWallet.toLowerCase();
+    });
+    
+    // 3. Reject if they truly do not exist
+    if (!matchedDoc) {
+      return NextResponse.json({ error: "Wallet not found in verified DAO members." }, { status: 404 });
     }
-
-    const userData = userDoc.data();
-
-    // 3. Strict Security Checks
-    if (userData?.status !== "verified") {
-      return NextResponse.json({ error: "User is not a verified member." }, { status: 403 });
+  
+    // 4. Check if their status is actually active
+    const userData = matchedDoc.data();
+    if (userData.status !== 'verified') {
+        return NextResponse.json({ error: "Your DAO membership is not currently active." }, { status: 403 });
     }
+  
+    // ... [The rest of your ticket signing logic stays exactly the same!]
     
     if (userData?.walletAddress.toLowerCase() !== userWallet.toLowerCase()) {
       return NextResponse.json({ error: "Wallet address does not match registered profile." }, { status: 403 });
