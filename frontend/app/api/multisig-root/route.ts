@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import * as admin from "firebase-admin";
+import { db } from "../utils/firebaseAdmin";
 
 // --- NEW: Define the strict type to replace 'any' ---
 interface SignatureEntry {
@@ -7,16 +8,7 @@ interface SignatureEntry {
   signature: string;
 }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = admin.firestore();
+
 const updatesRef = db.collection("organizations").doc("org_1").collection("root_updates");
 
 export async function GET() {

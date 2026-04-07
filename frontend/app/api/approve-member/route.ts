@@ -2,18 +2,9 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import * as admin from "firebase-admin";
 import { addMemberToTree } from "../utils/TreeManager"; 
+import { db } from "../utils/firebaseAdmin";
 
-// --- FIREBASE INIT ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = admin.firestore();
+
 
 // --- WEB3 BACKEND CONFIG ---
 const CONTRACT_ADDRESS = "0xa5713A2a775bbA91C942487C686C5546a459F3e4"; 

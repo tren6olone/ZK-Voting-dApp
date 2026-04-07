@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import * as admin from "firebase-admin";
+import { db } from "../utils/firebaseAdmin";
 
 // Define strict typing for our signatures
 interface SignatureEntry {
@@ -8,16 +9,7 @@ interface SignatureEntry {
 }
 
 // --- FIREBASE INIT ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-const db = admin.firestore();
+
 // NEW COLLECTION: Isolating manager votes from Merkle Root votes
 const managerUpdatesRef = db.collection("organizations").doc("org_1").collection("manager_updates");
 

@@ -1,11 +1,12 @@
 import { Group } from "@semaphore-protocol/group";
 import * as admin from "firebase-admin";
+import { db } from "./firebaseAdmin";
 
 // 1. Initialize the Semaphore Group
 // In Semaphore v4, this automatically creates a Merkle tree with a default depth of 20 
 // (capable of holding over 1 million members).
 const group = new Group();
-const db = admin.firestore();
+
 
 /**
  * Reconstructs the tree in memory if the Node.js server restarts.
