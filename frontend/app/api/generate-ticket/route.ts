@@ -11,7 +11,6 @@ if (!admin.apps.length) {
     }),
   });
 }
-
 const db = admin.firestore();
 
 export async function POST(req: Request) {

@@ -16,7 +16,6 @@ if (!admin.apps.length) {
     }),
   });
 }
-
 const db = admin.firestore();
 const updatesRef = db.collection("organizations").doc("org_1").collection("root_updates");
 

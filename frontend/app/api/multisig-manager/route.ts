@@ -17,7 +17,6 @@ if (!admin.apps.length) {
     }),
   });
 }
-
 const db = admin.firestore();
 // NEW COLLECTION: Isolating manager votes from Merkle Root votes
 const managerUpdatesRef = db.collection("organizations").doc("org_1").collection("manager_updates");
