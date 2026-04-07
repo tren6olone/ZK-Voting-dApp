@@ -22,7 +22,7 @@ const metadata = {
 // 3. Create the AppKit instance
 createAppKit({
   adapters: [new EthersAdapter()],
-  networks: [mainnet, sepolia, hardhat], // Use sepolia for your testnet
+  networks: [sepolia], // Use sepolia for your testnet
   metadata,
   projectId,
   features: { analytics: true }
