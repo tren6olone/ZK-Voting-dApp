@@ -6,7 +6,7 @@ export async function POST(req: Request) {
     const { address, timestamp, signature, chainId } = await req.json();
     
     // IMPORTANT: Make sure this exactly matches the address in your frontend file!
-    const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+    const PROPOSAL_CONTRACT_ADDRESS = "0x890c4696889172E6A8895390489F0b7f6cA51128";
     
     // Reconstruct the exact structural domains
     const domain = { 

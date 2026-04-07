@@ -16,8 +16,8 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // --- WEB3 BACKEND CONFIG ---
-const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; 
-const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545"); 
+const CONTRACT_ADDRESS = "0xa5713A2a775bbA91C942487C686C5546a459F3e4"; 
+const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/N8mYXhL1a38jGYohZ8_oH"); 
 
 // UPDATED ABI: Added totalManagers to handle dynamic thresholds
 const MINIMAL_ABI = [

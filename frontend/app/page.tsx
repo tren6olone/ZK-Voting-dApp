@@ -7,9 +7,9 @@ import Link from "next/link";
 export default function Home() {
   // Split the text for staggered animation
   const titleText = "A decentralized organizational voting system using Ethereum blockchain".split(" ");
-
+  
   return (
-    <div className="relative min-h-[80vh] flex flex-col items-center justify-center overflow-hidden">
+    <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
       
       {/* --- Ambient Background Glow --- */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[120px] -z-10 pointer-events-none" />

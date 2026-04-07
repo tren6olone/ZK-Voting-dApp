@@ -5,7 +5,7 @@ import { useAppKitAccount, useAppKitProvider } from '@reown/appkit/react';
 import { BrowserProvider, Eip1193Provider, Contract, keccak256, toUtf8Bytes } from 'ethers';
 import { motion, AnimatePresence } from "framer-motion";
 
-const PROPOSAL_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const PROPOSAL_CONTRACT_ADDRESS = "0x890c4696889172E6A8895390489F0b7f6cA51128";
 
 const PROPOSAL_ABI = [
   "function createProposal(bytes32 _contentHash, bytes calldata _serverTicket) external",

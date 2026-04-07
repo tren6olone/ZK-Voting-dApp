@@ -1,0 +1,6 @@
+{
+  "ZKVotingModule#ZKVoting": "0xa5713A2a775bbA91C942487C686C5546a459F3e4",
+  "ProposalRegistryModule#ProposalRegistry": "0x890c4696889172E6A8895390489F0b7f6cA51128",
+  "AnonymousVoterModule#SemaphoreVerifier": "0xf14Fe8e626De9BD3E9C0DebF0d2C610466Db210d",
+  "AnonymousVoterModule#AnonymousVoter": "0x6ABA8442972cCDbc4FF6e59cA2fC482f8e520974"
+}
