@@ -1,7 +1,7 @@
 'use client'
 import { motion } from "framer-motion";
 import Image from 'next/image';
-import { Member, ManagerQueueItem, QueueSignature } from "../app/hooks/useDaoCore";
+import { Member, ManagerQueueItem, QueueSignature } from "@/app/members/hooks/useDaoCore";
 
 interface Props {
   address: string | undefined;
