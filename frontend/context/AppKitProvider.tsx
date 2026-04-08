@@ -15,7 +15,7 @@ if (!projectId) {
 const metadata = {
   name: 'ZK Voting DAO',
   description: 'Gasless Zero-Knowledge Voting System',
-  url: 'http://localhost:3000', 
+  url: 'https://zkvoting-dapp.vercel.app', 
   icons: ['https://avatars.githubusercontent.com/u/179229932']
 }
 
